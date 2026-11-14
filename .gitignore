@@ -1,2 +1,6 @@
-keys/
+# private key jangan pernah di-commit
+*.private.pem
+admin-private-key.pem
+keys/private.pem
+backups/
 uploads/*

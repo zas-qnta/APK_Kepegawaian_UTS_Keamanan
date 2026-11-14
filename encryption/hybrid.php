@@ -1,179 +1,108 @@
 <?php
+// Hybrid cryptosystem: AES-256-GCM (simetris) + RSA-OAEP (asimetris)
+// Server hanya memegang PUBLIC key. Dekripsi butuh PRIVATE key milik admin.
 
+const PUBLIC_KEY_FILE = __DIR__ . '/../keys/public.pem';
 
-// Lokasi penyimpanan pasangan kunci RSA
-if (!defined('KEY_DIR')) {
-    define('KEY_DIR', __DIR__ . '/../keys');
-}
-function ensure_key_pair(): void
+// Merapikan PEM hasil paste (baris baru hilang, CRLF, spasi berlebih)
+function normalize_private_key(string $input): string
 {
-    if (!is_dir(KEY_DIR)) {
-        mkdir(KEY_DIR, 0700, true);
+    $input = trim($input);
+    if ($input === '') {
+        return '';
     }
-
-    $privatePath = KEY_DIR . '/private.pem';
-    $publicPath  = KEY_DIR . '/public.pem';
-
-    if (file_exists($privatePath) && file_exists($publicPath)) {
-        return;
+    if (!preg_match('/-----BEGIN ([A-Z ]*PRIVATE KEY)-----(.+?)-----END \1-----/s', $input, $m)) {
+        return '';
     }
-
-    // Lokasi konfigurasi OpenSSL pada Laragon
-    $configPath = 'D:/laragon/bin/apache/httpd-2.4.54-win64-VS16/conf/openssl.cnf';
-
-    if (!file_exists($configPath)) {
-        throw new RuntimeException('File openssl.cnf tidak ditemukan: ' . $configPath);
-    }
-
-    $config = [
-        'private_key_bits' => 2048,
-        'private_key_type' => OPENSSL_KEYTYPE_RSA,
-        'config' => $configPath
-    ];
-
-    $res = openssl_pkey_new($config);
-
-    if (!$res) {
-        $errors = [];
-        while ($msg = openssl_error_string()) {
-            $errors[] = $msg;
-        }
-
-        throw new RuntimeException(
-            'Gagal membuat kunci RSA: ' . implode(' | ', $errors)
-        );
-    }
-
-    if (!openssl_pkey_export($res, $privatePem, null, $config)) {
-        throw new RuntimeException('Gagal mengekspor private key.');
-    }
-
-    $details = openssl_pkey_get_details($res);
-
-    if (!$details || empty($details['key'])) {
-        throw new RuntimeException('Gagal mengambil public key.');
-    }
-
-    file_put_contents($privatePath, $privatePem, LOCK_EX);
-    file_put_contents($publicPath, $details['key'], LOCK_EX);
-
-    @chmod($privatePath, 0600);
+    $body = preg_replace('/\s+/', '', $m[2]);
+    return "-----BEGIN {$m[1]}-----\n" . chunk_split($body, 64, "\n") . "-----END {$m[1]}-----\n";
 }
 
+// Bukti kepemilikan: data acak dienkripsi public key sistem, harus bisa dibuka private key yang diinput
+function verify_private_key(string $privatePem): bool
+{
+    if (!is_file(PUBLIC_KEY_FILE)) {
+        return false;
+    }
+    $priv = @openssl_pkey_get_private($privatePem);
+    $pub  = @openssl_pkey_get_public(file_get_contents(PUBLIC_KEY_FILE));
+    if (!$priv || !$pub) {
+        return false;
+    }
+    $probe = random_bytes(32);
+    if (!openssl_public_encrypt($probe, $enc, $pub, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return false;
+    }
+    if (!@openssl_private_decrypt($enc, $dec, $priv, OPENSSL_PKCS1_OAEP_PADDING)) {
+        return false;
+    }
+    return hash_equals($probe, $dec);
+}
 
 function encrypt_content(string $plaintext): array
 {
-    ensure_key_pair();
-
-    $publicPath = KEY_DIR . '/public.pem';
-    $publicKey = openssl_pkey_get_public(file_get_contents($publicPath));
-
+    if (!is_file(PUBLIC_KEY_FILE)) {
+        throw new RuntimeException('Public key tidak ditemukan (keys/public.pem).');
+    }
+    $publicKey = openssl_pkey_get_public(file_get_contents(PUBLIC_KEY_FILE));
     if (!$publicKey) {
         throw new RuntimeException('Public key tidak dapat dibaca.');
     }
 
     $aesKey = random_bytes(32);
-    $iv = random_bytes(12);
-    $tag = '';
+    $iv     = random_bytes(12);
+    $tag    = '';
 
-    $ciphertext = openssl_encrypt(
-        $plaintext,
-        'aes-256-gcm',
-        $aesKey,
-        OPENSSL_RAW_DATA,
-        $iv,
-        $tag
-    );
-
+    $ciphertext = openssl_encrypt($plaintext, 'aes-256-gcm', $aesKey, OPENSSL_RAW_DATA, $iv, $tag, '', 16);
     if ($ciphertext === false) {
-        throw new RuntimeException('Enkripsi AES gagal.');
+        throw new RuntimeException('Enkripsi AES-256-GCM gagal.');
     }
 
-    if (!openssl_public_encrypt(
-        $aesKey,
-        $encryptedKey,
-        $publicKey,
-        OPENSSL_PKCS1_OAEP_PADDING
-    )) {
-        throw new RuntimeException('Enkripsi RSA gagal.');
+    if (!openssl_public_encrypt($aesKey, $wrappedKey, $publicKey, OPENSSL_PKCS1_OAEP_PADDING)) {
+        throw new RuntimeException('Enkripsi kunci AES dengan RSA-OAEP gagal.');
     }
 
     return [
-        'ciphertext' => base64_encode($ciphertext),
-        'iv' => base64_encode($iv),
-        'tag' => base64_encode($tag),
-        'wrapped_key' => base64_encode($encryptedKey),
-        'encrypted_key' => base64_encode($encryptedKey)
+        'ciphertext'  => base64_encode($ciphertext),
+        'iv'          => base64_encode($iv),
+        'tag'         => base64_encode($tag),
+        'wrapped_key' => base64_encode($wrappedKey),
     ];
 }
 
-function decrypt_content(array $record): string
+function decrypt_content(array $record, string $privatePem): string
 {
-    $privatePath = KEY_DIR . '/private.pem';
-
-    if (!file_exists($privatePath)) {
-        throw new RuntimeException('Private key RSA tidak ditemukan.');
-    }
-
     $decode = function (string $field) use ($record): string {
-        if (!isset($record[$field]) || $record[$field] === '') {
-            throw new RuntimeException('Kolom ' . $field . ' kosong.');
+        $value = base64_decode((string)($record[$field] ?? ''), true);
+        if ($value === false || $value === '') {
+            throw new RuntimeException('Kolom ' . $field . ' kosong atau tidak valid.');
         }
-
-        $value = base64_decode((string)$record[$field], true);
-
-        if ($value === false) {
-            throw new RuntimeException('Format Base64 kolom ' . $field . ' tidak valid.');
-        }
-
         return $value;
     };
 
-    $ciphertext = $decode('ciphertext');
-    $iv = $decode('iv');
-    $tag = $decode('tag');
-
-    $wrappedKeyField = isset($record['wrapped_key'])
-        ? 'wrapped_key'
-        : 'encrypted_key';
-
-    $wrappedKey = $decode($wrappedKeyField);
-
-    $privateKey = openssl_pkey_get_private(
-        file_get_contents($privatePath)
-    );
-
+    $privateKey = openssl_pkey_get_private($privatePem);
     if (!$privateKey) {
-        throw new RuntimeException('Private key RSA tidak dapat dibaca.');
+        throw new RuntimeException('Private key tidak dapat dibaca.');
     }
 
-    $aesKey = '';
-
-    if (!openssl_private_decrypt(
-        $wrappedKey,
-        $aesKey,
-        $privateKey,
-        OPENSSL_PKCS1_OAEP_PADDING
-    )) {
+    if (!openssl_private_decrypt($decode('wrapped_key'), $aesKey, $privateKey, OPENSSL_PKCS1_OAEP_PADDING)) {
         throw new RuntimeException('Gagal membuka kunci AES dengan RSA-OAEP.');
     }
 
-    if (strlen($aesKey) !== 32) {
-        throw new RuntimeException('Panjang kunci AES tidak valid.');
-    }
-
-    $plaintext = openssl_decrypt(
-        $ciphertext,
-        'aes-256-gcm',
-        $aesKey,
-        OPENSSL_RAW_DATA,
-        $iv,
-        $tag
-    );
-
+    $plaintext = openssl_decrypt($decode('ciphertext'), 'aes-256-gcm', $aesKey, OPENSSL_RAW_DATA, $decode('iv'), $decode('tag'));
     if ($plaintext === false) {
-        throw new RuntimeException('Dekripsi AES-256-GCM gagal.');
+        throw new RuntimeException('Dekripsi AES-256-GCM gagal (data berubah atau kunci salah).');
     }
-
     return $plaintext;
+}
+
+// Dekripsi satu baris database menjadi array data pegawai (null jika gagal)
+function decrypt_row(array $row, string $privatePem): ?array
+{
+    try {
+        $data = json_decode(decrypt_content($row, $privatePem), true);
+        return is_array($data) ? $data : null;
+    } catch (Throwable $e) {
+        return null;
+    }
 }

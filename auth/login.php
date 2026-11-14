@@ -1,19 +1,28 @@
-﻿<?php
-session_start();
-require_once '../config/database.php';
+<?php
+require_once __DIR__ . '/../config/bootstrap.php';
+
+if (!empty($_SESSION['admin_private_key'])) {
+    header('Location: ../admin/dashboard.php');
+    exit;
+}
+
+$error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $privateKeyInput = trim($_POST['private_key'] ?? '');
-    
-    if (!empty($privateKeyInput)) {
-        $_SESSION['admin_logged'] = true;
-        $_SESSION['admin_logged_in'] = true;
-        
-        $baseUrl = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'])), '/\\');
-        header('Location: ' . $baseUrl . '/admin/dashboard.php');
-        exit;
+    $raw = (string)($_POST['private_key'] ?? '');
+    $pem = normalize_private_key($raw);
+
+    if (trim($raw) === '') {
+        $error = 'Private key tidak boleh kosong.';
+    } elseif ($pem === '' || !verify_private_key($pem)) {
+        sleep(1);
+        $error = 'Private key tidak valid atau tidak cocok dengan public key sistem.';
     } else {
-        $error = "RSA Private Key tidak boleh kosong!";
+        session_regenerate_id(true);
+        $_SESSION['admin_private_key'] = $pem;
+        $_SESSION['csrf'] = bin2hex(random_bytes(16));
+        header('Location: ../admin/dashboard.php');
+        exit;
     }
 }
 ?>
@@ -25,75 +34,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Login Admin - Sistem Kepegawaian</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { 
-            background-color: #1b3b36; 
+        body {
+            background-color: #1b3b36;
             background-image: radial-gradient(circle at 50% 50%, #244c45 0%, #152f2b 100%);
-            display: flex; 
-            justify-content: center; 
-            align-items: center; 
-            height: 100vh; 
+            color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
         }
-        .login-card { 
-            background: rgba(27, 59, 54, 0.9); 
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 35px; 
-            border-radius: 16px; 
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4); 
-            backdrop-filter: blur(10px);
-            width: 100%; 
-            max-width: 440px; 
+        .login-card {
+            width: 100%; max-width: 520px; padding: 36px;
+            background: rgba(27, 59, 54, 0.85); border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         }
-        h2 { color: #ffffff; margin-bottom: 8px; font-size: 24px; }
-        p { color: #94a3b8; font-size: 14px; margin-bottom: 25px; }
-        .error-msg { background-color: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; }
-        label { display: block; font-weight: 500; font-size: 13px; color: #cbd5e1; margin-bottom: 8px; }
-        textarea { 
-            width: 100%; 
-            height: 130px; 
-            padding: 12px; 
-            background: rgba(15, 32, 29, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.12); 
-            border-radius: 8px; 
-            color: #ffffff;
-            font-family: monospace; 
-            font-size: 11px; 
-            resize: vertical; 
+        h2 { color: #ffffff; font-size: 24px; margin-bottom: 8px; }
+        p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: #cbd5e1; margin-bottom: 6px; font-weight: 500; }
+        textarea {
+            width: 100%; height: 190px; padding: 12px 14px; resize: vertical;
+            background: rgba(15, 32, 29, 0.6); border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px; color: #ffffff; font-family: Consolas, monospace; font-size: 12px;
         }
         textarea:focus { outline: none; border-color: #7ee7df; box-shadow: 0 0 0 3px rgba(126, 231, 223, 0.15); }
-        button[type="submit"] { 
-            width: 100%; 
-            background-color: #7ee7df; 
-            color: #112220; 
-            border: none; 
-            padding: 12px; 
-            border-radius: 8px; 
-            font-size: 15px; 
-            font-weight: 600; 
-            cursor: pointer; 
-            margin-top: 20px; 
-            transition: all 0.2s;
+        .file-row { margin: 14px 0 0 0; font-size: 13px; color: #94a3b8; }
+        .file-row input { color: #94a3b8; font-size: 13px; }
+        button[type="submit"] {
+            width: 100%; background-color: #7ee7df; color: #112220; border: none; padding: 12px;
+            border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 20px; transition: all 0.2s;
         }
         button[type="submit"]:hover { background-color: #5bcaca; transform: translateY(-1px); }
-        .back-link { display: block; text-align: center; margin-top: 20px; color: #94a3b8; text-decoration: none; font-size: 13px; transition: color 0.2s; }
+        .error-msg {
+            background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;
+            padding: 12px 16px; border-radius: 8px; margin-bottom: 18px; font-size: 13px;
+        }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: #94a3b8; text-decoration: none; font-size: 13px; }
         .back-link:hover { color: #7ee7df; }
     </style>
 </head>
 <body>
 <div class="login-card">
-    <h2>🔐 Login Admin</h2>
-    <p>Autentikasi keamanan menggunakan RSA Private Key.</p>
-    
-    <?php if (isset($error)): ?>
-        <div class="error-msg"><?= htmlspecialchars($error); ?></div>
+    <h2>&#128272; Login Admin</h2>
+    <p>Masuk menggunakan RSA Private Key. Tidak ada password: hanya pemilik private key yang dapat masuk dan membuka data terenkripsi.</p>
+
+    <?php if ($error !== ''): ?>
+        <div class="error-msg"><?= e($error); ?></div>
     <?php endif; ?>
 
     <form method="POST" action="">
-        <label for="private_key">Masukkan / Paste RSA Private Key:</label>
-        <textarea name="private_key" id="private_key" placeholder="-----BEGIN PRIVATE KEY----- ..."></textarea>
+        <label for="private_key">Tempel RSA Private Key (format PEM):</label>
+        <textarea name="private_key" id="private_key" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"></textarea>
+
+        <div class="file-row">
+            atau pilih file key: <input type="file" id="keyfile" accept=".pem,.key,.txt">
+        </div>
+
         <button type="submit">Masuk sebagai Admin</button>
     </form>
-    
-    <a href="../index.php" class="back-link">&larr; Kembali ke Beranda Publik</a>
+
+    <a href="../index.php" class="back-link">&larr; Kembali ke Beranda</a>
 </div>
+<script>
+    document.getElementById('keyfile').addEventListener('change', function (ev) {
+        var f = ev.target.files[0];
+        if (!f) return;
+        var r = new FileReader();
+        r.onload = function () { document.getElementById('private_key').value = r.result; };
+        r.readAsText(f);
+    });
+</script>
 </body>
 </html>
