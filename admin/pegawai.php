@@ -6,6 +6,15 @@ require_login();
 $priv   = $_SESSION['admin_private_key'];
 $fields = ['nip', 'nama', 'jabatan', 'email', 'telepon'];
 
+// Salinan data publik (nama dan jabatan). NIP, email, telepon hanya ada di paket terenkripsi.
+function sync_publik(PDO $pdo, int $id, array $data): void
+{
+    if ($id <= 0) {
+        return;
+    }
+    $st = $pdo->prepare("INSERT INTO pegawai_publik (pegawai_id, nama, jabatan) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE nama = ?, jabatan = ?");
+    $st->execute([$id, $data['nama'], $data['jabatan'], $data['nama'], $data['jabatan']]);
+}
 function flash(string $type, string $msg): void
 {
     $_SESSION['flash'] = [$type, $msg];
@@ -30,10 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($action === 'add') {
                     $stmt = $pdo->prepare("INSERT INTO pegawai_terenkripsi (ciphertext, iv, tag, wrapped_key) VALUES (?, ?, ?, ?)");
                     $stmt->execute([$enc['ciphertext'], $enc['iv'], $enc['tag'], $enc['wrapped_key']]);
+                    sync_publik($pdo, (int)$pdo->lastInsertId(), $data);
                     flash('success', 'Data pegawai dienkripsi dan disimpan ke database.');
                 } else {
                     $stmt = $pdo->prepare("UPDATE pegawai_terenkripsi SET ciphertext = ?, iv = ?, tag = ?, wrapped_key = ? WHERE id = ?");
                     $stmt->execute([$enc['ciphertext'], $enc['iv'], $enc['tag'], $enc['wrapped_key'], (int)($_POST['id'] ?? 0)]);
+                    sync_publik($pdo, (int)($_POST['id'] ?? 0), $data);
                     flash('success', 'Data pegawai diperbarui dan dienkripsi ulang.');
                 }
             }

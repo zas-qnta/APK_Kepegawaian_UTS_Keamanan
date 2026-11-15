@@ -4,6 +4,7 @@ function admin_head(string $title, string $active): void
     $menu = [
         'dashboard' => ['dashboard.php', '&#128202; Dashboard'],
         'pegawai'   => ['pegawai.php', '&#128101; Data Pegawai'],
+        'enkripsi'  => ['enkripsi.php', '&#128274; Enkripsi &amp; Dekripsi'],
     ];
     ?>
 <!DOCTYPE html>

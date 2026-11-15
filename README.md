@@ -1,216 +1,100 @@
 # Sistem Informasi Kepegawaian
 
-## Deskripsi
+Aplikasi sistem informasi berbasis web yang terdiri dari **landing page** dan **halaman admin**. Seluruh data pegawai disimpan dalam bentuk terenkripsi di database dan hanya dapat dibaca oleh admin yang memegang RSA private key.
 
-Sistem Informasi Kepegawaian merupakan aplikasi berbasis web yang digunakan untuk mengelola dan menyimpan data pegawai secara lebih terstruktur dengan menerapkan teknologi kriptografi untuk menjaga kerahasiaan informasi.
+Dibuat dengan PHP native dan MySQL untuk tugas kriptografi simetris dan asimetris.
 
-Aplikasi ini dikembangkan menggunakan PHP Native dan MySQL. Sistem keamanan data menerapkan metode Hybrid Cryptosystem yang menggabungkan algoritma AES-256-GCM dan RSA-OAEP.
+## Ketentuan Tugas dan Penerapannya
 
-Selain itu, autentikasi administrator menggunakan RSA Private Key dengan mekanisme tanda tangan digital (Digital Signature).
-
-## Fitur Utama
-
-1. Login administrator menggunakan RSA Private Key.
-2. Autentikasi menggunakan tanda tangan digital RSA-SHA256.
-3. Pengelolaan data pegawai.
-4. Enkripsi data menggunakan AES-256-GCM.
-5. Pengamanan kunci AES menggunakan RSA-OAEP.
-6. Dekripsi data pegawai oleh sistem yang memiliki private key RSA.
-7. Penyimpanan data terenkripsi ke dalam database MySQL.
-
-## Teknologi yang Digunakan
-
-| Teknologi | Keterangan |
+| Ketentuan | Penerapan |
 |---|---|
-| PHP Native | Bahasa pemrograman backend |
-| MySQL | Database |
-| HTML | Struktur halaman web |
-| CSS | Tampilan antarmuka |
-| Bootstrap 5 | Framework antarmuka |
-| JavaScript Web Crypto API | Pembuatan tanda tangan digital |
-| OpenSSL | Implementasi kriptografi |
-| Laragon | Lingkungan pengembangan lokal |
+| Login admin tidak memakai password, diganti input kunci / private key | `auth/login.php` menerima RSA private key (tempel teks PEM atau pilih file `.pem`). Kunci diverifikasi terhadap `keys/public.pem` sebelum sesi dibuat. |
+| Setelah masuk, semua konten halaman admin didekripsi | `admin/dashboard.php` dan `admin/pegawai.php` mendekripsi setiap baris database dengan private key yang dipakai login. |
+| Konten dibuat dan disimpan dalam bentuk terenkripsi | Data pegawai dienkripsi lebih dulu (`encryption/hybrid.php`), baru disimpan ke tabel `pegawai_terenkripsi`. |
+| Kode, hasil, dan database dikumpulkan | Kode dan database ada di repositori ini (`database/kepegawaian.sql`). Kode dan hasilnya disatukan dalam satu file PDF. |
 
-## Algoritma Kriptografi
+## Fitur
 
-### 1. AES-256-GCM
+- Landing page dengan dua halaman: Beranda dan Data Pegawai (hanya menampilkan ciphertext).
+- Login admin dengan RSA private key.
+- Dashboard berisi statistik dan 5 pegawai terbaru hasil dekripsi.
+- Tambah, ubah, dan hapus data pegawai. Setiap simpan dienkripsi ulang.
+- Perlindungan CSRF pada semua form, serta cookie sesi `httponly` dan `samesite=Strict`.
 
-AES-256-GCM digunakan untuk mengenkripsi data pegawai.
+## Algoritma
 
-- AES menggunakan kunci sepanjang 256 bit.
-- Mode GCM memberikan kerahasiaan dan autentikasi integritas data.
-- Setiap proses enkripsi menggunakan kunci dan IV acak.
-- Hasil enkripsi menghasilkan ciphertext dan authentication tag.
+Sistem memakai skema hybrid:
 
-### 2. RSA-OAEP
+1. **AES-256-GCM (simetris)** mengenkripsi data pegawai. Kunci AES (32 byte) dan IV (12 byte) dibuat acak untuk setiap data. GCM juga menghasilkan authentication tag untuk menjaga keutuhan data.
+2. **RSA-OAEP (asimetris)** membungkus kunci AES dengan public key. Kunci AES hanya bisa dibuka kembali dengan private key.
 
-RSA-OAEP digunakan untuk mengamankan kunci AES.
+Yang tersimpan di database per baris: `ciphertext`, `iv`, `tag`, dan `wrapped_key` (semuanya base64). Server hanya menyimpan public key, sedangkan private key dipegang admin.
 
-- Sistem membuat kunci AES secara acak.
-- Kunci AES dienkripsi menggunakan RSA Public Key.
-- RSA Private Key digunakan untuk membuka kembali kunci AES.
-- Kunci AES yang berhasil dibuka digunakan untuk mendekripsi data pegawai.
+## Alur
 
-### 3. Digital Signature RSA-SHA256
+    Simpan data
+    Data pegawai (JSON)
+      -> AES-256-GCM dengan kunci acak     -> ciphertext + iv + tag
+      -> kunci AES dibungkus RSA public key -> wrapped_key
+      -> simpan ke tabel pegawai_terenkripsi
 
-RSA juga digunakan untuk autentikasi administrator.
-
-- Administrator memilih file RSA Private Key.
-- Browser membuat tanda tangan digital dari challenge yang diberikan server.
-- Server memverifikasi tanda tangan menggunakan RSA Public Key.
-- Jika valid, administrator mendapatkan akses ke dashboard.
+    Login dan tampil
+    Admin memasukkan private key
+      -> diverifikasi terhadap public key sistem
+      -> wrapped_key dibuka dengan private key -> kunci AES
+      -> AES-256-GCM mendekripsi ciphertext    -> data pegawai tampil di halaman admin
 
 ## Struktur Folder
 
-```text
-sistem-kepegawaian/
-|
-|-- admin/
-|   |-- dashboard.php
-|   |-- detail_pegawai.php
-|   |-- pegawai.php
-|
-|-- auth/
-|   |-- login.php
-|   |-- logout.php
-|   |-- auth_keys/
-|       |-- admin_public.pem
-|
-|-- config/
-|   |-- bootstrap.php
-|   |-- database.php
-|
-|-- database/
-|   |-- kepegawaian.sql
-|
-|-- encryption/
-|   |-- hybrid.php
-|
-|-- keys/
-|   |-- private.pem
-|   |-- public.pem
-|
-|-- backups/
-|
-|-- index.php
-|-- README.md
-```
+    sistem-kepegawaian/
+    |-- admin/
+    |   |-- dashboard.php
+    |   |-- layout.php
+    |   |-- pegawai.php
+    |-- auth/
+    |   |-- login.php
+    |   |-- logout.php
+    |-- config/
+    |   |-- bootstrap.php
+    |   |-- database.php
+    |-- database/
+    |   |-- kepegawaian.sql
+    |-- encryption/
+    |   |-- hybrid.php
+    |-- keys/
+    |   |-- public.pem
+    |-- index.php
+    |-- README.md
 
-## Persyaratan Sistem
+## Kebutuhan
 
-Sebelum menjalankan aplikasi, pastikan perangkat telah memiliki:
+- Laragon (Apache dan MySQL/MariaDB)
+- PHP 8.x dengan ekstensi OpenSSL aktif
+- Perintah `openssl` untuk membuat pasangan kunci
 
-- Laragon.
-- PHP 8.x.
-- MySQL atau MariaDB.
-- Ekstensi OpenSSL PHP aktif.
-- Browser modern yang mendukung Web Crypto API.
+## Instalasi
 
-## Cara Instalasi
+1. Salin folder `sistem-kepegawaian` ke `D:\laragon\www\`.
+2. Jalankan Apache dan MySQL di Laragon, lalu import `database/kepegawaian.sql` lewat phpMyAdmin. Database `kepegawaian` dan tabel `pegawai_terenkripsi` akan terbentuk.
+3. Sesuaikan koneksi di `config/database.php` bila perlu:
 
-### 1. Menyiapkan Proyek
+        $host = 'localhost';
+        $dbname = 'kepegawaian';
+        $username = 'root';
+        $password = '';
 
-Salin folder proyek ke direktori:
+4. Buat pasangan kunci RSA. Simpan `private.pem` di luar folder proyek:
 
-```text
-D:\laragon\www\
-```
+        openssl genrsa -out private.pem 2048
+        openssl rsa -in private.pem -pubout -out keys\public.pem
 
-### 2. Menyiapkan Database
+5. Buka `http://localhost/sistem-kepegawaian/`, klik **Login Admin**, lalu tempel isi `private.pem` atau pilih filenya.
 
-1. Jalankan Laragon.
-2. Aktifkan Apache dan MySQL.
-3. Buka phpMyAdmin.
-4. Import file `database/kepegawaian.sql`.
-5. Pastikan database `kepegawaian` berhasil dibuat.
-
-### 3. Konfigurasi Database
-
-Buka file:
-
-```text
-config/database.php
-```
-
-Sesuaikan konfigurasi database dengan lingkungan komputer:
-
-```php
-$host = 'localhost';
-$db   = 'kepegawaian';
-$user = 'root';
-$pass = '';
-```
-
-### 4. Menyiapkan Kunci RSA
-
-Sistem menggunakan dua pasangan kunci RSA dengan fungsi berbeda:
-
-**Kunci enkripsi data pegawai:**
-- `keys/public.pem`
-- `keys/private.pem`
-
-**Kunci autentikasi administrator:**
-- `auth/auth_keys/admin_public.pem`
-- `admin-login-private.pem` yang disimpan secara terpisah di komputer administrator.
-
-Jangan menghapus, mengganti, atau membagikan private key yang sudah digunakan.
-
-### 5. Menjalankan Aplikasi
-
-Buka browser dan akses:
-
-```text
-http://localhost/sistem-kepegawaian/
-```
-
-Halaman login administrator dapat diakses melalui:
-
-```text
-http://localhost/sistem-kepegawaian/auth/login.php
-```
-
-Pilih file `admin-login-private.pem` untuk melakukan autentikasi.
-
-## Alur Sistem Enkripsi
-
-```text
-Data Pegawai
-     |
-     v
-Membuat Kunci AES-256
-     |
-     v
-Enkripsi Data dengan AES-256-GCM
-     |
-     v
-Enkripsi Kunci AES dengan RSA Public Key
-     |
-     v
-Simpan Ciphertext, IV, Tag, dan Wrapped Key
-     |
-     v
-Database MySQL
-     |
-     v
-RSA Private Key Membuka Kunci AES
-     |
-     v
-Dekripsi AES-256-GCM
-     |
-     v
-Data Pegawai Asli
-```
+Catatan: jika `keys/public.pem` diganti, data lama di database tidak bisa dibuka dengan private key yang baru dan akan tampil sebagai `[gagal didekripsi]`. Kosongkan tabel (`TRUNCATE pegawai_terenkripsi;`) lalu input ulang datanya.
 
 ## Catatan Keamanan
 
-- Private key tidak boleh dibagikan kepada pihak lain.
-- Private key enkripsi data pegawai harus disimpan secara aman.
-- Lakukan pencadangan database dan pasangan kunci secara berkala.
-- Jangan menyimpan private key di direktori publik website.
-- Gunakan HTTPS ketika aplikasi diterapkan pada server produksi.
-- Sistem login menggunakan challenge agar tanda tangan digital tidak dapat digunakan kembali untuk sesi login berikutnya.
-- Jangan menghapus kolom `password_hash` dari database tanpa melakukan migrasi skema yang terencana.
-
-## Tujuan Pengembangan
-
-Aplikasi ini dikembangkan sebagai implementasi penerapan ilmu kriptografi dalam pengembangan sistem informasi berbasis web, khususnya untuk menjaga kerahasiaan dan integritas data pegawai serta menerapkan autentikasi administrator berbasis pasangan kunci RSA.
+- Private key tidak boleh disimpan di dalam folder proyek maupun di-commit ke Git (sudah dikecualikan di `.gitignore`).
+- Selama sesi login, private key disimpan di sesi PHP server agar halaman admin bisa mendekripsi data. Sesi dihapus saat logout.
+- Gunakan HTTPS jika aplikasi dipasang di server sungguhan, karena private key dikirim saat login.
+- Simpan cadangan private key. Tanpa kunci ini, data terenkripsi tidak dapat dipulihkan.

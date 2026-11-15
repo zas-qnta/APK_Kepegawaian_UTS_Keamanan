@@ -1,15 +1,16 @@
 <?php
 require_once __DIR__ . '/config/database.php';
 
-$page = $_GET['page'] ?? 'home';
-$rows = [];
-
-if ($page === 'data') {
-    try {
-        $rows = $pdo->query("SELECT id, ciphertext, iv FROM pegawai_terenkripsi ORDER BY id ASC")->fetchAll();
-    } catch (Exception $e) {
-        $rows = [];
+$page   = $_GET['page'] ?? 'home';
+$total  = 0;
+$daftar = [];
+try {
+    $total = (int)$pdo->query("SELECT COUNT(*) FROM pegawai_terenkripsi")->fetchColumn();
+    if ($page === 'data') {
+        $daftar = $pdo->query("SELECT nama, jabatan FROM pegawai_publik ORDER BY nama ASC")->fetchAll();
     }
+} catch (Exception $e) {
+    $daftar = [];
 }
 ?>
 <!DOCTYPE html>
@@ -36,36 +37,51 @@ if ($page === 'data') {
         nav a.active { color: #7ee7df; background-color: rgba(126, 231, 223, 0.15); }
         .btn-login { background-color: #7ee7df; color: #112220; padding: 9px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: all 0.2s; }
         .btn-login:hover { background-color: #5bcaca; transform: translateY(-1px); }
+        .btn-outline { border: 1px solid rgba(126, 231, 223, 0.5); color: #7ee7df; padding: 9px 18px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: all 0.2s; }
+        .btn-outline:hover { background-color: rgba(126, 231, 223, 0.1); }
         .container {
             max-width: 900px; margin: 50px auto; padding: 40px; background: rgba(27, 59, 54, 0.85);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
             flex: 1; width: 90%;
         }
         h2 { margin-bottom: 15px; color: #ffffff; font-size: 26px; }
-        p { color: #94a3b8; margin-bottom: 20px; line-height: 1.6; font-size: 15px; }
+        h2.sub { font-size: 20px; margin: 34px 0 14px 0; }
+        p { color: #94a3b8; margin-bottom: 20px; line-height: 1.7; font-size: 15px; }
+        .hero p { font-size: 16px; }
+        .aksi { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+        .kartu { background: rgba(15, 32, 29, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 18px 20px; }
+        .kartu h4 { color: #7ee7df; font-size: 15px; margin-bottom: 6px; }
+        .kartu p { margin: 0; font-size: 13.5px; line-height: 1.6; }
+        .langkah { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+        .langkah .no { flex: 0 0 34px; height: 34px; border-radius: 50%; background: rgba(126, 231, 223, 0.15); color: #7ee7df; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+        .langkah p { margin: 0; font-size: 14px; }
+        .langkah strong { color: #e2e8f0; }
         .info-box { background: rgba(15, 32, 29, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); padding: 25px; border-radius: 12px; margin-top: 25px; }
         .info-box h3 { color: #7ee7df; margin-bottom: 10px; font-size: 18px; }
         .info-box p:last-child { margin-bottom: 0; }
+        .info-box a { color: #7ee7df; font-weight: 600; text-decoration: none; }
+        .info-box a:hover { text-decoration: underline; }
+        .tabel-data { width: 100%; border-collapse: collapse; margin-top: 14px; }
+        .tabel-data th, .tabel-data td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 14px; }
+        .tabel-data th { color: #7ee7df; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tabel-data td { color: #e2e8f0; }
         .info-clickable { cursor: pointer; user-select: none; transition: all 0.25s ease; }
         .info-clickable:hover { border-color: rgba(126, 231, 223, 0.5); transform: translateY(-2px); }
         .info-clickable .warn-text { display: none; margin: 12px 0 0 0; }
         .info-clickable.warning { background: rgba(245, 158, 11, 0.18); border: 1px solid #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2), 0 0 24px rgba(245, 158, 11, 0.25); }
         .info-clickable.warning h3 { color: #fbbf24; }
         .info-clickable.warning .warn-text { display: block; color: #fde68a; font-weight: 600; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 13px; }
-        th { color: #7ee7df; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-        td { color: #cbd5e1; }
-        td.cipher { font-family: Consolas, monospace; font-size: 12px; color: #64748b; word-break: break-all; }
         footer { background-color: rgba(18, 38, 35, 0.95); border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: center; padding: 25px 20px; margin-top: auto; }
         footer p { margin: 0; color: #64748b; font-size: 13px; }
+        @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .container { padding: 24px; } }
     </style>
 </head>
 <body>
 <header>
     <h1>&#10024; Portal Kepegawaian</h1>
     <nav>
-        <a href="index.php" class="<?= $page === 'data' ? '' : 'active'; ?>">Beranda</a>
+        <a href="index.php" class="<?= $page === 'data' ? '' : 'active'; ?>">Awal</a>
         <a href="index.php?page=data" class="<?= $page === 'data' ? 'active' : ''; ?>">Data Pegawai</a>
     </nav>
     <a href="auth/login.php" class="btn-login">Login Admin</a>
@@ -75,32 +91,41 @@ if ($page === 'data') {
 <?php if ($page === 'data'): ?>
 
     <h2>Data Pegawai</h2>
-    <p>Data pegawai disimpan dalam bentuk terenkripsi (AES-256-GCM + RSA-OAEP). Isinya hanya dapat dibaca administrator yang memiliki private key.</p>
+    <p>Daftar pegawai yang dapat dilihat publik. Data lengkap (NIP, email, dan telepon) tidak ditampilkan di sini karena disimpan terenkripsi dan hanya dapat dibuka administrator yang memiliki private key.</p>
+
     <div class="info-box">
-        <p>Total data tersimpan: <strong style="color:#7ee7df;"><?= count($rows); ?></strong></p>
-        <?php if (count($rows) > 0): ?>
-            <table>
-                <thead><tr><th>No</th><th>ID</th><th>Ciphertext (cuplikan)</th><th>IV</th></tr></thead>
+        <p>Total pegawai: <strong style="color:#7ee7df;"><?= count($daftar); ?></strong></p>
+        <?php if (count($daftar) > 0): ?>
+            <div style="overflow-x:auto;">
+            <table class="tabel-data">
+                <thead><tr><th>No</th><th>Nama</th><th>Jabatan</th></tr></thead>
                 <tbody>
-                <?php $no = 1; foreach ($rows as $r): ?>
+                <?php $no = 1; foreach ($daftar as $p): ?>
                     <tr>
                         <td><?= $no++; ?></td>
-                        <td><?= (int)$r['id']; ?></td>
-                        <td class="cipher"><?= htmlspecialchars(substr($r['ciphertext'], 0, 32)); ?>...</td>
-                        <td class="cipher"><?= htmlspecialchars($r['iv']); ?></td>
+                        <td><?= htmlspecialchars($p['nama'], ENT_QUOTES, 'UTF-8'); ?></td>
+                        <td><?= htmlspecialchars($p['jabatan'], ENT_QUOTES, 'UTF-8'); ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            </div>
         <?php else: ?>
             <p>Belum ada data pegawai.</p>
         <?php endif; ?>
     </div>
 
+    <div class="info-box">
+        <h3>Data Lengkap Pegawai</h3>
+        <p>NIP, email, dan telepon pegawai disimpan dengan enkripsi AES-256-GCM dan RSA-OAEP. Administrator dapat membukanya melalui <a href="auth/login.php">halaman Login Admin</a> menggunakan private key.</p>
+    </div>
+
 <?php else: ?>
 
-    <h2>Selamat Datang di Sistem Informasi Kepegawaian</h2>
-    <p>Halaman ini merupakan portal utama bagi pengunjung dan pegawai untuk melihat informasi instansi secara terbuka dan transparan.</p>
+    <div class="hero">
+        <h2>Sistem Informasi Kepegawaian</h2>
+        <p>Aplikasi web untuk mengelola data pegawai secara terpusat dan aman. Setiap data pegawai disimpan dalam bentuk terenkripsi, sehingga isinya tidak bisa dibaca langsung dari database. Hanya administrator pemegang private key yang dapat membuka dan mengelola data tersebut.</p>
+    </div>
 
     <div class="info-box info-clickable" id="infoLayanan" role="button" tabindex="0" aria-pressed="false">
         <h3><span id="infoIcon">&#8505;&#65039;</span> Informasi Layanan</h3>

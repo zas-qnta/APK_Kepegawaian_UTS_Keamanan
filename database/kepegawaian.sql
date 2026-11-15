@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS pegawai_terenkripsi (
     created_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Data yang boleh tampil di halaman publik (nama dan jabatan). NIP, email, telepon hanya ada di pegawai_terenkripsi.
+CREATE TABLE IF NOT EXISTS pegawai_publik (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    pegawai_id INT UNSIGNED NOT NULL UNIQUE,
+    nama       VARCHAR(150) NOT NULL,
+    jabatan    VARCHAR(150) NOT NULL DEFAULT '',
+    FOREIGN KEY (pegawai_id) REFERENCES pegawai_terenkripsi(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
